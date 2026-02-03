@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Pips</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+ <link rel="icon" href="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTNHU3U9ItaSMkQhifIlylo5awybpgbHtRijdu3e_e4vQ&s=10" sizes="16×16" type="image/png" />  
+<style>
+body{margin:0;background:#111;color:#fff;font-family:system-ui;display:flex;flex-direction:column;align-items:center}
+#top{display:flex;gap:10px;margin:10px}
+button,select{padding:8px 14px;font-size:16px;border-radius:8px;border:none}
+#board{display:grid;grid-template-columns:repeat(6,60px);grid-template-rows:repeat(6,60px);gap:2px;position:relative}
+.cell{background:#222;border-radius:8px;position:relative}
+.rule{position:absolute;top:2px;left:4px;font-size:12px;opacity:.8}
+.domino{position:absolute;width:120px;height:60px;background:#eee;color:#000;border-radius:10px;
+display:flex;justify-content:space-between;align-items:center;font-weight:bold;font-size:22px;
+user-select:none;cursor:grab;transition:.15s}
+.vertical{width:60px;height:120px;flex-direction:column}
+.drag{opacity:.7;transform:scale(1.05)}
+#tray{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;width:380px;justify-content:center}
+.clearMsg{position:fixed;top:45%;left:50%;transform:translate(-50%,-50%) scale(0);
+font-size:80px;font-weight:bold;color:#0f0;transition:.4s}
+</style>
+</head>
+<body>
+
+<div id="top">
+<button onclick="newPuzzle()">次の問題</button>
+<select id="difficulty">
+<option>Easy</option>
+<option>Medium</option>
+<option>Hard</option>
+</select>
+</div>
+
+<div id="board"></div>
+<div id="tray"></div>
+
+<script>
+const size=6, board=document.getElementById("board"), tray=document.getElementById("tray");
+let grid=[], regions=[], drag=null;
+
+document.addEventListener("keydown",e=>{
+ if(e.ctrlKey&&e.key==="n") newPuzzle();
+});
+
+function makeBoard(){
+ board.innerHTML=""; grid=[];
+ for(let y=0;y<size;y++){
+  for(let x=0;x<size;x++){
+   const c=document.createElement("div");
+   c.className="cell"; c.dataset.x=x; c.dataset.y=y;
+   board.appendChild(c); grid.push(c);
+  }
+ }
+}
+
+function getCell(x,y){return grid.find(c=>+c.dataset.x==x&&+c.dataset.y==y)}
+function rand(n){return Math.floor(Math.random()*n)}
+function rpip(){return 1+rand(6)}
+
+function makeDomino(a,b){
+ const d=document.createElement("div");
+ d.className="domino";
+ d.dataset.a=a; d.dataset.b=b; d.dataset.rot=0;
+ d.innerHTML=`<div>${a}</div><div>${b}</div>`;
+ d.onclick=()=>rotate(d);
+ d.onpointerdown=()=>{drag=d;d.classList.add("drag")};
+ tray.appendChild(d);
+}
+
+function rotate(d){
+ let r=(+d.dataset.rot+1)%2;
+ d.dataset.rot=r;
+ d.classList.toggle("vertical",r==1);
+}
+
+document.onpointermove=e=>{
+ if(!drag) return;
+ drag.style.position="absolute";
+ drag.style.left=e.pageX-30+"px";
+ drag.style.top=e.pageY-30+"px";
+};
+
+document.onpointerup=e=>{
+ if(!drag) return;
+ drag.classList.remove("drag");
+ const rect=board.getBoundingClientRect();
+ const x=Math.floor((e.clientX-rect.left)/62);
+ const y=Math.floor((e.clientY-rect.top)/62);
+ placeDomino(drag,x,y);
+ drag=null;
+ saveState();
+};
+
+function placeDomino(d,x,y){
+ const rot=+d.dataset.rot;
+ let x2=x+(rot==0?1:0), y2=y+(rot==1?1:0);
+ if(x<0||y<0||x2>=size||y2>=size) return;
+ const c1=getCell(x,y), c2=getCell(x2,y2);
+ if(c1.firstChild||c2.firstChild) return;
+ d.style.position="relative"; d.style.left=0; d.style.top=0;
+ c1.appendChild(d);
+ checkWin();
+}
+
+/* -------- Regions -------- */
+
+function makeRegions(){
+ regions=[];
+ const diff=document.getElementById("difficulty").value;
+ const regionCount= diff=="Easy"?6: diff=="Medium"?8:10;
+
+ for(let i=0;i<regionCount;i++){
+  const cells=[];
+  for(let j=0;j<3+rand(3);j++){
+   cells.push(grid[rand(grid.length)]);
+  }
+  const type=["=","≠","+","<",">"][rand(5)];
+  const target=3+rand(12);
+  regions.push({cells,type,target});
+ }
+
+ regions.forEach(r=>{
+  const el=document.createElement("div");
+  el.className="rule";
+  el.textContent=r.type+r.target;
+  r.cells[0].appendChild(el);
+ });
+}
+
+/* -------- Check -------- */
+
+function readValues(){
+ const vals=Array(size).fill().map(()=>Array(size).fill(null));
+ grid.forEach(c=>{
+  if(c.firstChild){
+   const d=c.firstChild;
+   const x=+c.dataset.x,y=+c.dataset.y;
+   const a=+d.dataset.a,b=+d.dataset.b,rot=+d.dataset.rot;
+   vals[y][x]=a;
+   if(rot==0) vals[y][x+1]=b;
+   else vals[y+1][x]=b;
+  }
+ });
+ return vals;
+}
+
+function boardFull(){
+ return readValues().every(row=>row.every(v=>v!=null));
+}
+
+function checkRegions(){
+ const vals=readValues();
+ for(const r of regions){
+  const nums=[];
+  for(const c of r.cells){
+   const x=+c.dataset.x,y=+c.dataset.y;
+   if(vals[y][x]==null) return false;
+   nums.push(vals[y][x]);
+  }
+  const sum=nums.reduce((a,b)=>a+b,0);
+  switch(r.type){
+   case "=": if(!nums.every(n=>n==r.target)) return false; break;
+   case "≠": if(nums.some(n=>n==r.target)) return false; break;
+   case "+": if(sum!=r.target) return false; break;
+   case "<": if(!(sum<r.target)) return false; break;
+   case ">": if(!(sum>r.target)) return false; break;
+  }
+ }
+ return true;
+}
+
+function checkWin(){
+ if(boardFull() && checkRegions()) showClear();
+}
+
+function showClear(){
+ const m=document.createElement("div");
+ m.className="clearMsg"; m.textContent="CLEAR!";
+ document.body.appendChild(m);
+ setTimeout(()=>m.style.transform="translate(-50%,-50%) scale(1)",50);
+ setTimeout(()=>m.remove(),1500);
+}
+
+/* -------- Save -------- */
+
+function saveState(){
+ localStorage.setItem("pipsState",board.innerHTML);
+}
+
+function loadState(){
+ const s=localStorage.getItem("pipsState");
+ if(s) board.innerHTML=s;
+}
+
+/* -------- Puzzle -------- */
+
+function newPuzzle(){
+ tray.innerHTML="";
+ makeBoard();
+ makeRegions();
+ for(let i=0;i<12;i++) makeDomino(rpip(),rpip());
+ localStorage.removeItem("pipsState");
+}
+
+newPuzzle();
+</script>
+</body>
+</html>
